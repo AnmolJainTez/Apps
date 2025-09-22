@@ -12,59 +12,53 @@ URL = "https://companiesmarketcap.com/usa/largest-companies-in-the-usa-by-market
 
 # ---- Scraping ----
 def scrape_symbols():
-    """Scrape top 100 US companies with ticker, name, and price."""
+    """Scrape top 100 US companies with ticker and name (no price)."""
     r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
     soup = BeautifulSoup(r.text, "html.parser")
 
-    symbols, names, prices = [], [], []
+    symbols, names = [], []
     rows = soup.select("table tbody tr")
 
     for row in rows:
         name_tag = row.select_one("div.company-name")
         symbol_tag = row.select_one("div.company-code")
-        cols = row.find_all("td")
 
-        if not name_tag or not symbol_tag or len(cols) < 5:
+        if not name_tag or not symbol_tag:
             continue
 
         name = name_tag.get_text(strip=True)
         symbol = symbol_tag.get_text(strip=True)
-        price_str = cols[4].get_text(strip=True).replace("$", "").replace(",", "")
-
-        try:
-            price = float(price_str)
-        except:
-            price = None
 
         names.append(name)
         symbols.append(symbol)
-        prices.append(price)
 
         if len(names) == 100:  # only top 100
             break
 
-    return symbols, names, prices
+    return symbols, names   # <-- CHANGE (removed prices)
 
 
 # ---- YFinance Analysis ----
-def analyze(symbols, prices):
+def analyze(symbols, names):
     """Run 20-day OHLC analysis using yfinance (slow)."""
     results = []
     latest_date = None
     for idx, ticker in enumerate(symbols):
         try:
-            data = yf.download(ticker, period="20d", interval="1d", progress=False, auto_adjust=False)
+            # "." → "-" for yfinance compatibility (BRK.B -> BRK-B)
+            yf_symbol = ticker.replace(".", "-")  # <-- ADDITION
+            data = yf.download(yf_symbol, period="20d", interval="1d",
+                               progress=False, auto_adjust=False)
             if data.empty:
                 continue
-            # data = data.iloc[:-1]
 
             data = data.round(2)
-
+            data = data.iloc[:-1]
             high_20 = float(data["High"].max())
             low_20 = float(data["Low"].min())
-            current_price = prices[idx]
+            current_price = float(data["Close"].iloc[-1])   # <-- CHANGE (use yfinance close)
 
-            results.append([ticker, st.session_state.names[idx], current_price, high_20, low_20])
+            results.append([ticker, names[idx], current_price, high_20, low_20])
             if latest_date is None or data.index[-1] > latest_date:
                 latest_date = data.index[-1]
 
@@ -82,7 +76,7 @@ st.title("📊 US Top 100 Stocks – 20D High/Low Scanner")
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame()
 if "symbols" not in st.session_state:
-    st.session_state.symbols, st.session_state.names, st.session_state.prices = [], [], []
+    st.session_state.symbols, st.session_state.names = [], []   # <-- CHANGE (removed prices)
 if "last_full_refresh" not in st.session_state:
     st.session_state.last_full_refresh = "Never"
 if "last_quick_refresh" not in st.session_state:
@@ -90,15 +84,27 @@ if "last_quick_refresh" not in st.session_state:
 
 # ---- Full Refresh ----
 if st.button("🔄 Full Refresh (update 20D High/Low + Prices)"):
-    st.session_state.symbols, st.session_state.names, st.session_state.prices = scrape_symbols()
-    st.session_state.df, latest_date = analyze(st.session_state.symbols, st.session_state.prices)
+    st.session_state.symbols, st.session_state.names = scrape_symbols()
+    st.session_state.df, latest_date = analyze(st.session_state.symbols, st.session_state.names)
     st.session_state.last_full_refresh = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.latest_data_date = latest_date.strftime("%Y-%m-%d") if latest_date else "N/A"
 
 # ---- Quick Refresh ----
 if st.button("⚡ Quick Refresh (update only Current Prices)"):
     if st.session_state.symbols:
-        _, _, new_prices = scrape_symbols()
+        new_prices = []
+        for sym in st.session_state.symbols:
+            try:
+                yf_symbol = sym.replace(".", "-")  # <-- ADDITION
+                data = yf.download(yf_symbol, period="5d", interval="1d",
+                                   progress=False, auto_adjust=False)
+                if data.empty:
+                    new_prices.append(None)
+                else:
+                    new_prices.append(float(data["Close"].iloc[-1]))  # <-- CHANGE
+            except:
+                new_prices.append(None)
+
         st.session_state.df["Current Price"] = new_prices
         st.session_state.last_quick_refresh = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     else:
