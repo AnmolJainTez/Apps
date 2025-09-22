@@ -8,40 +8,42 @@ from datetime import datetime
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-URL = "https://companiesmarketcap.com/usa/largest-companies-in-the-usa-by-market-cap/"
+# ---- CONFIG ----
+BASE_URL = "https://companiesmarketcap.com/usa/largest-companies-in-the-usa-by-market-cap/"
+NUM_PAGES = 2   # Change to 3, 4... if more pages exist
+
 
 # ---- Scraping ----
 def scrape_symbols():
-    """Scrape top 100 US companies with ticker, name, and price."""
-    r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(r.text, "html.parser")
-
+    """Scrape top US companies across multiple pages with ticker, name, and price."""
     symbols, names, prices = [], [], []
-    rows = soup.select("table tbody tr")
 
-    for row in rows:
-        name_tag = row.select_one("div.company-name")
-        symbol_tag = row.select_one("div.company-code")
-        cols = row.find_all("td")
+    for page in range(1, NUM_PAGES + 1):
+        url = BASE_URL if page == 1 else f"{BASE_URL}?page={page}"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        if not name_tag or not symbol_tag or len(cols) < 5:
-            continue
+        rows = soup.select("table tbody tr")
+        for row in rows:
+            name_tag = row.select_one("div.company-name")
+            symbol_tag = row.select_one("div.company-code")
+            cols = row.find_all("td")
 
-        name = name_tag.get_text(strip=True)
-        symbol = symbol_tag.get_text(strip=True)
-        price_str = cols[4].get_text(strip=True).replace("$", "").replace(",", "")
+            if not name_tag or not symbol_tag or len(cols) < 5:
+                continue
 
-        try:
-            price = float(price_str)
-        except:
-            price = None
+            name = name_tag.get_text(strip=True)
+            symbol = symbol_tag.get_text(strip=True)
+            price_str = cols[4].get_text(strip=True).replace("$", "").replace(",", "")
 
-        names.append(name)
-        symbols.append(symbol)
-        prices.append(price)
+            try:
+                price = float(price_str)
+            except:
+                price = None
 
-        if len(names) == 100:  # only top 100
-            break
+            names.append(name)
+            symbols.append(symbol)
+            prices.append(price)
 
     return symbols, names, prices
 
@@ -56,7 +58,6 @@ def analyze(symbols, prices):
             data = yf.download(ticker, period="20d", interval="1d", progress=False, auto_adjust=False)
             if data.empty:
                 continue
-            # data = data.iloc[:-1]
 
             data = data.round(2)
 
@@ -65,6 +66,7 @@ def analyze(symbols, prices):
             current_price = prices[idx]
 
             results.append([ticker, st.session_state.names[idx], current_price, high_20, low_20])
+
             if latest_date is None or data.index[-1] > latest_date:
                 latest_date = data.index[-1]
 
@@ -76,7 +78,7 @@ def analyze(symbols, prices):
 
 
 # ---- STREAMLIT APP ----
-st.title("📊 US Top 100 Stocks – 20D High/Low Scanner")
+st.title("📊 US Top 200 Stocks – 20D High/Low Scanner")
 
 # Keep data across reruns
 if "df" not in st.session_state:
@@ -130,6 +132,7 @@ st.markdown(f"**Last Full Refresh:** {st.session_state.last_full_refresh}")
 st.markdown(f"**Last Quick Refresh:** {st.session_state.last_quick_refresh}")
 if "latest_data_date" in st.session_state:
     st.markdown(f"**Latest Market Data Date:** {st.session_state.latest_data_date}")
+
 # ---- Source Link ----
 st.markdown("---")
-st.markdown(f"[🔗 Source: CompaniesMarketCap.com]({URL})")
+st.markdown(f"[🔗 Source: CompaniesMarketCap.com]({BASE_URL}) (Pages 1–{NUM_PAGES})")
