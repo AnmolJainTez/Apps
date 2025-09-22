@@ -35,18 +35,17 @@ def scrape_symbols():
         if len(names) == 100:  # only top 100
             break
 
-    return symbols, names   # <-- CHANGE (removed prices)
+    return symbols, names
 
 
 # ---- YFinance Analysis ----
 def analyze(symbols, names):
-    """Run 20-day OHLC analysis using yfinance (slow)."""
+    """Run 20-day OHLC analysis using yfinance."""
     results = []
     latest_date = None
     for idx, ticker in enumerate(symbols):
         try:
-            # "." → "-" for yfinance compatibility (BRK.B -> BRK-B)
-            yf_symbol = ticker.replace(".", "-")  # <-- ADDITION
+            yf_symbol = ticker.replace(".", "-")
             data = yf.download(yf_symbol, period="20d", interval="1d",
                                progress=False, auto_adjust=False)
             if data.empty:
@@ -56,7 +55,7 @@ def analyze(symbols, names):
             data = data.iloc[:-1]
             high_20 = float(data["High"].max())
             low_20 = float(data["Low"].min())
-            current_price = float(data["Close"].iloc[-1])   # <-- CHANGE (use yfinance close)
+            current_price = float(data["Close"].iloc[-1])   # last close only for bootstrap
 
             results.append([ticker, names[idx], current_price, high_20, low_20])
             if latest_date is None or data.index[-1] > latest_date:
@@ -76,7 +75,7 @@ st.title("📊 US Top 100 Stocks – 20D High/Low Scanner")
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame()
 if "symbols" not in st.session_state:
-    st.session_state.symbols, st.session_state.names = [], []   # <-- CHANGE (removed prices)
+    st.session_state.symbols, st.session_state.names = [], []
 if "last_full_refresh" not in st.session_state:
     st.session_state.last_full_refresh = "Never"
 if "last_quick_refresh" not in st.session_state:
@@ -92,20 +91,25 @@ if st.button("🔄 Full Refresh (update 20D High/Low + Prices)"):
 # ---- Quick Refresh ----
 if st.button("⚡ Quick Refresh (update only Current Prices)"):
     if st.session_state.symbols:
-        new_prices = []
-        for sym in st.session_state.symbols:
+        # scrape fresh prices from CompaniesMarketCap
+        r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"})
+        soup = BeautifulSoup(r.text, "html.parser")
+        rows = soup.select("table tbody tr")
+        price_map = {}
+        for row in rows:
+            sym_tag = row.select_one("div.company-code")
+            cols = row.find_all("td")
+            if not sym_tag or len(cols) < 5:
+                continue
+            sym = sym_tag.get_text(strip=True)
+            price_str = cols[4].get_text(strip=True).replace("$", "").replace(",", "")
             try:
-                yf_symbol = sym.replace(".", "-")  # <-- ADDITION
-                data = yf.download(yf_symbol, period="5d", interval="1d",
-                                   progress=False, auto_adjust=False)
-                if data.empty:
-                    new_prices.append(None)
-                else:
-                    new_prices.append(float(data["Close"].iloc[-1]))  # <-- CHANGE
+                price_map[sym] = float(price_str)
             except:
-                new_prices.append(None)
+                price_map[sym] = None
 
-        st.session_state.df["Current Price"] = new_prices
+        # update by ticker key
+        st.session_state.df["Current Price"] = st.session_state.df["Ticker"].map(price_map)
         st.session_state.last_quick_refresh = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     else:
         st.warning("Please run a Full Refresh first!")
@@ -136,6 +140,7 @@ st.markdown(f"**Last Full Refresh:** {st.session_state.last_full_refresh}")
 st.markdown(f"**Last Quick Refresh:** {st.session_state.last_quick_refresh}")
 if "latest_data_date" in st.session_state:
     st.markdown(f"**Latest Market Data Date:** {st.session_state.latest_data_date}")
+
 # ---- Source Link ----
 st.markdown("---")
 st.markdown(f"[🔗 Source: CompaniesMarketCap.com]({URL})")
