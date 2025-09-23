@@ -141,6 +141,60 @@ if not st.session_state.df.empty:
     else:
         st.write("None")
 
+# ---- Check New High/Low ----
+if st.button("🆕 Check New 20D High/Low (today vs stored)"):
+    if st.session_state.symbols:
+        new_high_rows, new_low_rows = [], []
+
+        for idx, ticker in enumerate(st.session_state.symbols):
+            try:
+                yf_symbol = ticker.replace(".", "-")
+                data = yf.download(yf_symbol, period="2d", interval="1d",
+                                   progress=False, auto_adjust=False)
+                if data.empty or len(data) < 1:
+                    continue
+
+                last_row = data.iloc[-1]  # latest entry
+                today_high = float(last_row["High"])
+                today_low = float(last_row["Low"])
+
+                prev_high = st.session_state.df.loc[
+                    st.session_state.df["Ticker"] == ticker, "20D High"
+                ].values[0]
+                prev_low = st.session_state.df.loc[
+                    st.session_state.df["Ticker"] == ticker, "20D Low"
+                ].values[0]
+
+                if today_high > prev_high:
+                    new_high_rows.append([
+                        ticker, st.session_state.names[idx],
+                        today_high, prev_high
+                    ])
+                if today_low < prev_low:
+                    new_low_rows.append([
+                        ticker, st.session_state.names[idx],
+                        today_low, prev_low
+                    ])
+            except Exception as e:
+                st.warning(f"⚠️ Skipping {ticker}: {e}")
+
+        if new_high_rows:
+            st.subheader(f"🚀 New 20D Highs Today ({len(new_high_rows)})")
+            st.dataframe(pd.DataFrame(new_high_rows,
+                                      columns=["Ticker", "Name", "Today's High", "Previous 20D High"]))
+        else:
+            st.write("No new highs today.")
+
+        if new_low_rows:
+            st.subheader(f"📉 New 20D Lows Today ({len(new_low_rows)})")
+            st.dataframe(pd.DataFrame(new_low_rows,
+                                      columns=["Ticker", "Name", "Today's Low", "Previous 20D Low"]))
+        else:
+            st.write("No new lows today.")
+    else:
+        st.warning("Please run a Full Refresh first!")
+
+
 # ---- Status ----
 st.markdown(f"**Last Full Refresh:** {st.session_state.last_full_refresh}")
 st.markdown(f"**Last Quick Refresh:** {st.session_state.last_quick_refresh}")
