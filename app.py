@@ -124,19 +124,19 @@ if st.button("⚡ Quick Refresh (update only Current Prices)"):
 if not st.session_state.df.empty:
     above_high_df = st.session_state.df[
         st.session_state.df["Current Price"] > st.session_state.df["20D High"]
-    ]
+    ][["Ticker", "Name", "Current Price", "20D High"]]
     below_low_df = st.session_state.df[
         st.session_state.df["Current Price"] < st.session_state.df["20D Low"]
-    ]
+    ][["Ticker", "Name", "Current Price", "20D Low"]]
 
-    st.subheader("📈 Above 20D High")
     if not above_high_df.empty:
+        st.subheader(f"📈 Above 20D High ({len(above_high_df)})")
         st.dataframe(above_high_df)
     else:
         st.write("None")
 
-    st.subheader("📉 Below 20D Low")
     if not below_low_df.empty:
+        st.subheader(f"📉 Below 20D Low ({len(below_low_df)})")
         st.dataframe(below_low_df)
     else:
         st.write("None")
