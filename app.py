@@ -52,7 +52,13 @@ def analyze(symbols, names):
                 continue
 
             data = data.round(2)
-            data = data.iloc[:-1]
+            last_date = data.index[-1].date()
+            today = datetime.now().date()
+            # print(last_date, today)
+
+            if last_date == today:
+                data = data.iloc[:-1]
+
             high_20 = float(data["High"].max())
             low_20 = float(data["Low"].min())
             current_price = float(data["Close"].iloc[-1])   # last close only for bootstrap
